@@ -3,7 +3,7 @@ import pandas as pd
 import os
 from dataset import DataReader
 
-
+# preprocess the data
 class PreProcessor:
     def __init__(self, data_path_list):
         self.dr_list = []

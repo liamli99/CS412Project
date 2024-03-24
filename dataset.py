@@ -31,8 +31,9 @@ class DataReader:
     
     def save_data(self, path_to_save):
         os.makedirs(path_to_save, exist_ok=True)
+        # import pdb; pdb.set_trace()
         for name in self.names:
-            getattr(self, name).to_csv(f"{path_to_save}/{name}", sep=' ',)
+            getattr(self, name).to_csv(f"{path_to_save}/{name}", sep=' ', index_label=False)
         # self.exp.to_csv(f"{path_to_save}/exp", sep=' ', index=False)
         # self.methy.to_csv(f"{path_to_save}/methy", sep=' ', index=False)
         # self.mirna.to_csv(f"{path_to_save}/mirna", sep=' ', index=False)
