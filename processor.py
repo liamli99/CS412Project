@@ -7,6 +7,8 @@ from dataset import DataReader
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+import warnings
+
 # process the data
 # implement feature selection methods here
 class Processor:
@@ -33,7 +35,7 @@ class Processor:
                     normality_results["Shapiro-Wilk"]["Fail"].append(row)
             print("Normality test for cancer", dr.cancer_type )
             print(f"Shapiro-Wilk Test - Pass: {len(normality_results['Shapiro-Wilk']['Pass'])}")
-            print(f"Shapiro-Wilk Test - Fail: {len(normality_results['Shapiro-Wilk']['Fail'])}")
+            print(f"Shapiro-Wilk Test - Fail: {len(normality_results['Shapiro-Wilk']['Fail'])} \n")
         return normality_results
     
     def Student_T_Test(self, name):
@@ -52,8 +54,8 @@ class Processor:
             p_values.append(p_value.pvalue)
         p_values = np.array(p_values)
         indexs = np.where(p_values < 0.05)
-        print(f"number of features with p value less than 0.05: {len(indexs[0])}")
-        print("total number of features:", len(p_values))
+        print(f"Number of features with p value less than 0.05: {len(indexs[0])}")
+        print(f"Total number of features: {len(p_values)} \n")
         return p_values
 
     def Pearson_Correlation(self, name):
@@ -69,16 +71,22 @@ class Processor:
             # sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f")
             # plt.title("Correlation Matrix")
             # plt.show()
-            print(correlation_matrix.shape)
-
+            print(f"Correlation Matrix for cancer {dr.cancer_type} is: {correlation_matrix}")
+            print(f"Correlation Matrix's shape for cancer {dr.cancer_type} is: {correlation_matrix.shape}\n")
     
 if __name__ == "__main__":
+    warnings.filterwarnings('ignore', category=UserWarning)
+    warnings.filterwarnings('ignore', category=RuntimeWarning)
+
     data_path_list = ["data/filtered_common_features/aml", "data/filtered_common_features/sarcoma",]
     processor = Processor(data_path_list)
-    # for name in ['exp', 'mirna']:
-    #     print("Analysis for category:", name)
-    #     p_values = processor.Student_T_Test(name)
+    for name in ['exp', 'mirna']:
+        print("************************************************")
+        print("Analysis for category:", name)
+        print("************************************************\n")
 
-    #     normality_results = processor.norm_evaluation(name)
-    processor.Pearson_Correlation("exp")
+        normality_results = processor.norm_evaluation(name)
+
+        p_values = processor.Student_T_Test(name)
+        processor.Pearson_Correlation("exp")
 
