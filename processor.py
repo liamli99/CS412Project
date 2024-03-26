@@ -15,8 +15,23 @@ class Processor:
             self.dr_list.append(DataReader(path, self.names))
     
     # evaluate whether the data follows normal distribution
-    def norm_evaluation(self, ):
-        pass
+    def norm_evaluation(self, name, alpha=0.05):
+        normality_results = {"Shapiro-Wilk": {"Pass": [], "Fail": []}}
+
+        for dr in self.dr_list:
+            row_names = getattr(dr, name).index
+            for row in row_names:
+                data = np.array(getattr(dr, name).loc[row].values)
+
+                stat, p_shapiro = stats.shapiro(data)
+                if p_shapiro > alpha:
+                    normality_results["Shapiro-Wilk"]["Pass"].append(row)
+                else:
+                    normality_results["Shapiro-Wilk"]["Fail"].append(row)
+
+        print(f"Shapiro-Wilk Test - Pass: {len(normality_results['Shapiro-Wilk']['Pass'])}")
+        print(f"Shapiro-Wilk Test - Fail: {len(normality_results['Shapiro-Wilk']['Fail'])}")
+        return normality_results
     
     def Student_T_Test(self, name):
         # Chi-Square Test
@@ -42,3 +57,5 @@ if __name__ == "__main__":
     processor = Processor(data_path_list)
     p_values = processor.Student_T_Test("methy")
     # print(p_values, len(p_values))
+
+    normality_results = processor.norm_evaluation("methy")
