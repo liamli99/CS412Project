@@ -4,6 +4,8 @@ import os
 from sklearn.feature_selection import chi2
 from scipy import stats
 from dataset import DataReader
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # process the data
 # implement feature selection methods here
@@ -16,9 +18,10 @@ class Processor:
         
     # evaluate whether the data follows normal distribution
     def norm_evaluation(self, name, alpha=0.05):
-        normality_results = {"Shapiro-Wilk": {"Pass": [], "Fail": []}}
 
         for dr in self.dr_list:
+            normality_results = {"Shapiro-Wilk": {"Pass": [], "Fail": []}}
+
             row_names = getattr(dr, name).index
             for row in row_names:
                 data = np.array(getattr(dr, name).loc[row].values)
@@ -52,13 +55,30 @@ class Processor:
         print(f"number of features with p value less than 0.05: {len(indexs[0])}")
         print("total number of features:", len(p_values))
         return p_values
+
+    def Pearson_Correlation(self, name):
+        for dr in self.dr_list:
+            data_list = []
+            row_names = getattr(dr, name).index
+            for row in row_names:
+                data_list.append(np.array(getattr(dr, name).loc[row].values))
+            data = np.array(data_list).T
+            correlation_matrix = np.corrcoef(data, rowvar=False)
+
+            # plt.figure(figsize=(10, 6))
+            # sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f")
+            # plt.title("Correlation Matrix")
+            # plt.show()
+            print(correlation_matrix.shape)
+
     
 if __name__ == "__main__":
     data_path_list = ["data/filtered_common_features/aml", "data/filtered_common_features/sarcoma",]
     processor = Processor(data_path_list)
-    for name in ['exp', 'mirna']:
-        print("Analysis for category:", name)
-        p_values = processor.Student_T_Test(name)
-    #print(p_values, len(p_values))
-        normality_results = processor.norm_evaluation(name)
+    # for name in ['exp', 'mirna']:
+    #     print("Analysis for category:", name)
+    #     p_values = processor.Student_T_Test(name)
+
+    #     normality_results = processor.norm_evaluation(name)
+    processor.Pearson_Correlation("exp")
 
