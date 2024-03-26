@@ -13,7 +13,7 @@ class Processor:
         self.names = ['exp', 'methy', 'mirna']
         for path in data_path_list:
             self.dr_list.append(DataReader(path, self.names))
-    
+        
     # evaluate whether the data follows normal distribution
     def norm_evaluation(self, name, alpha=0.05):
         normality_results = {"Shapiro-Wilk": {"Pass": [], "Fail": []}}
@@ -28,9 +28,9 @@ class Processor:
                     normality_results["Shapiro-Wilk"]["Pass"].append(row)
                 else:
                     normality_results["Shapiro-Wilk"]["Fail"].append(row)
-
-        print(f"Shapiro-Wilk Test - Pass: {len(normality_results['Shapiro-Wilk']['Pass'])}")
-        print(f"Shapiro-Wilk Test - Fail: {len(normality_results['Shapiro-Wilk']['Fail'])}")
+            print("Normality test for cancer", dr.cancer_type )
+            print(f"Shapiro-Wilk Test - Pass: {len(normality_results['Shapiro-Wilk']['Pass'])}")
+            print(f"Shapiro-Wilk Test - Fail: {len(normality_results['Shapiro-Wilk']['Fail'])}")
         return normality_results
     
     def Student_T_Test(self, name):
@@ -50,12 +50,15 @@ class Processor:
         p_values = np.array(p_values)
         indexs = np.where(p_values < 0.05)
         print(f"number of features with p value less than 0.05: {len(indexs[0])}")
+        print("total number of features:", len(p_values))
         return p_values
     
 if __name__ == "__main__":
     data_path_list = ["data/filtered_common_features/aml", "data/filtered_common_features/sarcoma",]
     processor = Processor(data_path_list)
-    p_values = processor.Student_T_Test("methy")
-    # print(p_values, len(p_values))
+    for name in ['exp', 'mirna']:
+        print("Analysis for category:", name)
+        p_values = processor.Student_T_Test(name)
+    #print(p_values, len(p_values))
+        normality_results = processor.norm_evaluation(name)
 
-    normality_results = processor.norm_evaluation("methy")
