@@ -10,7 +10,11 @@ class DataReader:
         self.load_data()
     
     def load_omic(self, omic_path):
-        df = pd.read_csv(omic_path, sep=' ')
+        print(f"Loading {omic_path}")
+        try:
+            df = pd.read_csv(omic_path, sep=' ')
+        except:
+            df = pd.read_csv(omic_path, sep='\t')
         # import pdb; pdb.set_trace()
         # df.index: get rows name
         # df.columns: get columns name
@@ -38,6 +42,9 @@ class DataReader:
         # self.methy.to_csv(f"{path_to_save}/methy", sep=' ', index=False)
         # self.mirna.to_csv(f"{path_to_save}/mirna", sep=' ', index=False)
     
+    def filter_rows(self, name, row_names):
+        condition = getattr(self, name).index.isin(row_names)
+        setattr(self, name, getattr(self, name)[condition])
 
 if __name__ == "__main__":
     path = "data/origin/aml"

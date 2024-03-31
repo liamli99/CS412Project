@@ -54,6 +54,9 @@ class Processor:
             p_values.append(p_value.pvalue)
         p_values = np.array(p_values)
         indexs = np.where(p_values < 0.05)
+        
+        for dr in self.dr_list:
+            dr.filter_rows(name, row_names[indexs])
         print(f"Number of features with p value less than 0.05: {len(indexs[0])}")
         print(f"Total number of features: {len(p_values)} \n")
         return p_values
@@ -85,8 +88,8 @@ if __name__ == "__main__":
         print("Analysis for category:", name)
         print("************************************************\n")
 
-        normality_results = processor.norm_evaluation(name)
+        # normality_results = processor.norm_evaluation(name)
 
         p_values = processor.Student_T_Test(name)
-        processor.Pearson_Correlation("exp")
+        # processor.Pearson_Correlation("exp")
 
