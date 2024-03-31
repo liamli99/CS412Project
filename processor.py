@@ -66,12 +66,12 @@ class Processor:
             avg_correlations.append((cancer_type, avg_corr))
         return avg_correlations
 
-    def plot_comparison(self, avg_correlations):
+    def plot_comparison(self, avg_correlations, name):
     # Plot comparison of average correlations
         plt.figure(figsize=(10, 6))
         for cancer_type, avg_corr in avg_correlations:
             plt.plot(avg_corr, label=cancer_type)
-        plt.xlabel('Gene Index')
+        plt.xlabel(name)
         plt.ylabel('Average Correlation')
         plt.title('Average Correlation by Cancer Type')
         plt.legend()
@@ -94,10 +94,9 @@ class Processor:
             # sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f")
             # plt.title("Correlation Matrix")
             # plt.show()
-            print(f"Correlation Matrix for cancer {dr.cancer_type} is: {correlation_matrix}")
+            #print(f"Correlation Matrix for cancer {dr.cancer_type} is: {correlation_matrix}")
             print(f"Correlation Matrix's shape for cancer {dr.cancer_type} is: {correlation_matrix.shape}\n")
             correlation_matrices.append((dr.cancer_type, correlation_matrix))
-
         return correlation_matrices
 
     def perform_pca_for_each_omic(self):
@@ -147,5 +146,5 @@ if __name__ == "__main__":
         
         avg_correlations = processor.average_correlation(correlation_matrices)
        
-        processor.plot_comparison( avg_correlations)
+        processor.plot_comparison(avg_correlations, name)
     processor.perform_pca_for_each_omic()
