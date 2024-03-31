@@ -8,7 +8,6 @@ from dataset import DataReader
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import seaborn as sns
-
 import warnings
 
 # process the data
@@ -60,7 +59,29 @@ class Processor:
         print(f"Total number of features: {len(p_values)} \n")
         return p_values
     
+    def average_correlation(self, correlation_matrices):
+        avg_correlations = []
+        for cancer_type, correlation_matrix in correlation_matrices:
+            avg_corr = np.nanmean(correlation_matrix, axis=1)
+            avg_correlations.append((cancer_type, avg_corr))
+        return avg_correlations
+
+    def plot_comparison(self, avg_correlations):
+    # Plot comparison of average correlations
+        plt.figure(figsize=(10, 6))
+        for cancer_type, avg_corr in avg_correlations:
+            plt.plot(avg_corr, label=cancer_type)
+        plt.xlabel('Gene Index')
+        plt.ylabel('Average Correlation')
+        plt.title('Average Correlation by Cancer Type')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+
+
     def Pearson_Correlation(self, name):
+        correlation_matrices = []
         for dr in self.dr_list:
             data_list = []
             row_names = getattr(dr, name).index
@@ -75,8 +96,10 @@ class Processor:
             # plt.show()
             print(f"Correlation Matrix for cancer {dr.cancer_type} is: {correlation_matrix}")
             print(f"Correlation Matrix's shape for cancer {dr.cancer_type} is: {correlation_matrix.shape}\n")
+            correlation_matrices.append((dr.cancer_type, correlation_matrix))
 
-    
+        return correlation_matrices
+
     def perform_pca_for_each_omic(self):
         for omic_type in self.names:
             for data_reader in self.dr_list:
@@ -101,6 +124,7 @@ class Processor:
 
         plt.grid(True)
         plt.show()
+
     
 if __name__ == "__main__":
     warnings.filterwarnings('ignore', category=UserWarning)
@@ -108,7 +132,8 @@ if __name__ == "__main__":
 
     data_path_list = ["data/filtered_common_features/aml", "data/filtered_common_features/sarcoma",]
     processor = Processor(data_path_list)
-    for name in ['exp', 'mirna']:
+    
+    for name in [ 'mirna', 'exp']:
         print("************************************************")
         print("Analysis for category:", name)
         print("************************************************\n")
@@ -116,5 +141,11 @@ if __name__ == "__main__":
         normality_results = processor.norm_evaluation(name)
 
         p_values = processor.Student_T_Test(name)
-        processor.Pearson_Correlation("exp")
+        #print("P-values:", p_values)
+
+        correlation_matrices = processor.Pearson_Correlation(name)
+        
+        avg_correlations = processor.average_correlation(correlation_matrices)
+       
+        processor.plot_comparison( avg_correlations)
     processor.perform_pca_for_each_omic()
