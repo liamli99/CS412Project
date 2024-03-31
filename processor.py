@@ -1,10 +1,12 @@
 import numpy as np
 import pandas as pd
 import os
+import matplotlib.pyplot as plt
 from sklearn.feature_selection import chi2
 from scipy import stats
 from dataset import DataReader
-import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 import seaborn as sns
 
 import warnings
@@ -57,7 +59,7 @@ class Processor:
         print(f"Number of features with p value less than 0.05: {len(indexs[0])}")
         print(f"Total number of features: {len(p_values)} \n")
         return p_values
-
+    
     def Pearson_Correlation(self, name):
         for dr in self.dr_list:
             data_list = []
@@ -73,6 +75,32 @@ class Processor:
             # plt.show()
             print(f"Correlation Matrix for cancer {dr.cancer_type} is: {correlation_matrix}")
             print(f"Correlation Matrix's shape for cancer {dr.cancer_type} is: {correlation_matrix.shape}\n")
+
+    
+    def perform_pca_for_each_omic(self):
+        for omic_type in self.names:
+            for data_reader in self.dr_list:
+                omic_data = getattr(data_reader, omic_type)
+                if omic_data.shape[0] == 0:
+                    continue  # Skip if data is missing or empty
+                pca = PCA(n_components=2)  # Specify the number of components
+                principal_components = pca.fit_transform(omic_data)
+                self.visualize_pca(principal_components, omic_type, data_reader)
+                
+    def visualize_pca(self, principal_components, omic_type, data_reader):
+        # Visualize PCA results
+        plt.figure(figsize=(8, 6))
+        plt.scatter(principal_components[:, 0], principal_components[:, 1], marker='o', edgecolors='k')
+        plt.title(f'PCA Visualization for {omic_type} Data ({data_reader.cancer_type})')
+        plt.xlabel('Principal Component 1')
+        plt.ylabel('Principal Component 2')
+        
+        # Add DataReader name (disease name) as annotation
+        plt.text(0.05, 0.95, f'Disease: {data_reader.cancer_type}', transform=plt.gca().transAxes, fontsize=12,
+                 verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.5))
+
+        plt.grid(True)
+        plt.show()
     
 if __name__ == "__main__":
     warnings.filterwarnings('ignore', category=UserWarning)
@@ -89,4 +117,4 @@ if __name__ == "__main__":
 
         p_values = processor.Student_T_Test(name)
         processor.Pearson_Correlation("exp")
-
+    processor.perform_pca_for_each_omic()
