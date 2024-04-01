@@ -78,8 +78,6 @@ class Processor:
         plt.grid(True)
         plt.show()
 
-
-
     def Pearson_Correlation(self, name):
         correlation_matrices = []
         for dr in self.dr_list:
@@ -103,11 +101,16 @@ class Processor:
         for omic_type in self.names:
             for data_reader in self.dr_list:
                 omic_data = getattr(data_reader, omic_type)
+                #print(omic_data)
                 if omic_data.shape[0] == 0:
                     continue  # Skip if data is missing or empty
+                # Normalize the data
+                scaler = StandardScaler()
+                omic_data_normalized = scaler.fit_transform(omic_data)
                 pca = PCA(n_components=2)  # Specify the number of components
-                principal_components = pca.fit_transform(omic_data)
+                principal_components = pca.fit_transform(omic_data_normalized)
                 self.visualize_pca(principal_components, omic_type, data_reader)
+                #self.visualize_pca_3d(principal_components, omic_type, data_reader)
                 
     def visualize_pca(self, principal_components, omic_type, data_reader):
         # Visualize PCA results
@@ -122,6 +125,17 @@ class Processor:
                  verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.5))
 
         plt.grid(True)
+        plt.show()
+
+    def visualize_pca_3d(self, principal_components, omic_type, data_reader):
+        fig = plt.figure(figsize=(8, 6))
+        ax = fig.add_subplot(111, projection='3d')
+
+        ax.scatter(principal_components[:, 0], principal_components[:, 1], principal_components[:, 2], alpha=0.5)
+        ax.set_title(f'PCA 3D Visualization for {omic_type}')
+        ax.set_xlabel('Principal Component 1')
+        ax.set_ylabel('Principal Component 2')
+        ax.set_zlabel('Principal Component 3')
         plt.show()
 
     
