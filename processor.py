@@ -6,28 +6,48 @@ from scipy import stats
 from dataset import DataReader
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+from scipy.stats import chi2_contingency
 import warnings
+
+warnings.filterwarnings('ignore', category=UserWarning)
+warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 # process the data
 # implement feature selection methods here
 class Processor:
     def __init__(self, data_path_list):
         self.dr_list = []
-        self.names = ['exp', 'methy', 'mirna']
+        self.names = ['clinical', 'exp', 'methy', 'mirna', ]
         for path in data_path_list:
             self.dr_list.append(DataReader(path, self.names))
-        
+    
+    def normalize(self, name, row_names=None):
+        if row_names is not None:
+            dr_combined = pd.concat([getattr(dr, name).loc[row_names] for dr in self.dr_list], axis=1).T
+            mean = dr_combined.mean()
+            std = dr_combined.std()
+            for dr in self.dr_list:
+                data = getattr(dr, name).loc[row_names].T
+                data = (data - mean) / std
+                exec(f"dr.{name}.loc[{row_names}] = data.T")
+        else:
+            dr_combined = pd.concat([getattr(dr, name) for dr in self.dr_list], axis=1).T
+            mean = dr_combined.mean()
+            std = dr_combined.std()
+            for dr in self.dr_list:
+                data = getattr(dr, name).T
+                data = (data - mean) / std
+                setattr(dr, name, data.T)
+    
     # evaluate whether the data follows normal distribution
-    def norm_evaluation(self, name, alpha=0.05):
-
+    def norm_evaluation(self, name, alpha=0.01):
         for dr in self.dr_list:
             normality_results = {"Shapiro-Wilk": {"Pass": [], "Fail": []}}
 
             row_names = getattr(dr, name).index
             for row in row_names:
                 data = np.array(getattr(dr, name).loc[row].values)
-
+                # import pdb; pdb.set_trace()
                 stat, p_shapiro = stats.shapiro(data)
                 if p_shapiro > alpha:
                     normality_results["Shapiro-Wilk"]["Pass"].append(row)
@@ -38,11 +58,12 @@ class Processor:
             print(f"Shapiro-Wilk Test - Fail: {len(normality_results['Shapiro-Wilk']['Fail'])} \n")
         return normality_results
     
-    def Student_T_Test(self, name):
+    def Student_T_Test(self, name, row_names=None, filter=False):
         # Chi-Square Test
         # input: name of the omic
         # output: p values of the features
-        row_names = getattr(self.dr_list[0], name).index
+        if row_names is None:
+            row_names = getattr(self.dr_list[0], name).index
         p_values = []
         for row in row_names:
             data = []
@@ -54,13 +75,38 @@ class Processor:
             p_values.append(p_value.pvalue)
         p_values = np.array(p_values)
         indexs = np.where(p_values < 0.05)
-        
-        for dr in self.dr_list:
-            dr.filter_rows(name, row_names[indexs])
+        if filter:
+            for dr in self.dr_list:
+                dr.filter_rows(name, row_names=indexs[0])
+        print(f"Student T Test for {name}:")
         print(f"Number of features with p value less than 0.05: {len(indexs[0])}")
         print(f"Total number of features: {len(p_values)} \n")
         return p_values
-
+    
+    def Chi_Square_Test(self, name, row_names, filter=False):
+        # Chi-Square Test
+        # input: name of the omic
+        # output: p values of the features
+        p_values = []
+        for row in row_names:
+            data = np.zeros((len(self.dr_list), 2))
+            for i, dr in enumerate(self.dr_list):
+                data[0, i] = sum(getattr(dr, name).loc[row].values == 0)
+                data[1, i] = sum(getattr(dr, name).loc[row].values == 1)
+            chi2, p, dof, expected = chi2_contingency(data)
+            p_values.append(p)
+        p_values = np.array(p_values)
+        indexs = np.where(p_values < 0.05)
+        print(f"Chi_Square_Test for {name}:")
+        print(f"Number of features with p value less than 0.05: {len(indexs[0])}")
+        print(f"Total number of features: {len(p_values)} \n")
+        print(f"Features with p value less than 0.05: {getattr(self.dr_list[0], name).index[indexs[0]]}")
+        if filter:
+            for dr in self.dr_list:
+                dr.filter_rows(name, row_names=indexs[0])
+        
+        return p_values
+        
     def Pearson_Correlation(self, name):
         for dr in self.dr_list:
             data_list = []
@@ -78,18 +124,20 @@ class Processor:
             print(f"Correlation Matrix's shape for cancer {dr.cancer_type} is: {correlation_matrix.shape}\n")
     
 if __name__ == "__main__":
-    warnings.filterwarnings('ignore', category=UserWarning)
-    warnings.filterwarnings('ignore', category=RuntimeWarning)
-
     data_path_list = ["data/filtered_common_features/aml", "data/filtered_common_features/sarcoma",]
     processor = Processor(data_path_list)
-    for name in ['exp', 'mirna']:
+    
+    for name in ['clinical', ]:
         print("************************************************")
         print("Analysis for category:", name)
         print("************************************************\n")
 
         # normality_results = processor.norm_evaluation(name)
-
-        p_values = processor.Student_T_Test(name)
+        processor.normalize(name, row_names=['age_at_initial_pathologic_diagnosis'])
+        processor.Student_T_Test(name, row_names=['age_at_initial_pathologic_diagnosis'])
+        p_values = processor.Chi_Square_Test(name, row_names=['gender_FEMALE', 'gender_MALE', \
+                                    'history_of_neoadjuvant_treatment_No', 'history_of_neoadjuvant_treatment_Yes', \
+                                    'vital_status_DECEASED', 'vital_status_LIVING'])
+        
         # processor.Pearson_Correlation("exp")
 

@@ -15,9 +15,12 @@ class PreProcessor:
         for path in data_path_list:
             self.dr_list.append(DataReader(path, self.names))
     
-    def transpose_clinical_data(self, ):
+    def transform_clinical_data(self, ):
         # transpose the clinical data
+        # still need to replace '-' with '.'
         for dr in self.dr_list:
+            dr.clinical = pd.get_dummies(dr.clinical, columns=['gender', 'history_of_neoadjuvant_treatment', 'vital_status'])
+            dr.clinical.index = dr.clinical.index.str.replace("-", ".", regex=False)
             dr.clinical = dr.clinical.T
     
     def get_common_features(self, name):
@@ -55,7 +58,7 @@ if __name__ == "__main__":
     data_path_list = ["data/origin/aml", "data/origin/sarcoma",]
     processor = PreProcessor(data_path_list)
     # import pdb; pdb.set_trace()
-    processor.transpose_clinical_data()
+    processor.transform_clinical_data()
     # import pdb; pdb.set_trace()
     processor.filter_common_features()
     processor.filter_irrelevant_features()
