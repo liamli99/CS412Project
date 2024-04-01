@@ -7,12 +7,14 @@ from scipy import stats
 from dataset import DataReader
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from sklearn.manifold import TSNE
 import seaborn as sns
 from scipy.stats import chi2_contingency
 import warnings
 
 warnings.filterwarnings('ignore', category=UserWarning)
 warnings.filterwarnings('ignore', category=RuntimeWarning)
+warnings.filterwarnings('ignore', category=FutureWarning)
 
 # process the data
 # implement feature selection methods here
@@ -60,6 +62,44 @@ class Processor:
             print(f"Shapiro-Wilk Test - Fail: {len(normality_results['Shapiro-Wilk']['Fail'])} \n")
         return normality_results
     
+    def box_cox_transformation(self, name, row_names=None):
+        if row_names is not None:
+            for dr in self.dr_list:
+                data = getattr(dr, name).loc[row_names].T
+                data, lamb = stats.boxcox(data)
+                print(f"Lambda for {dr.cancer_type} is: {lamb}")
+                exec(f"dr.{name}.loc[{row_names}] = data.T")
+        else:
+            for dr in self.dr_list:
+                data = getattr(dr, name).T
+                data, lamb = stats.boxcox(data)
+                print(f"Lambda for {dr.cancer_type} is: {lamb}")
+                setattr(dr, name, data.T)
+    
+    def ANOVA_Test(self, name, row_names=None, filter=False):
+        if row_names is None:
+            row_names = getattr(self.dr_list[0], name).index
+        p_values = []
+        for row in row_names:
+            data = []
+            for dr in self.dr_list:
+                data.append(np.array(getattr(dr, name).loc[row].values))
+            # import pdb; pdb.set_trace()
+            # TODO: should evaluate the variance of the two groups first: stats.levene(A, B) 
+            stat, p_value = stats.f_oneway(data[0],data[1])
+            p_values.append(p_value)
+        p_values = np.array(p_values)
+        indexs = np.where(p_values < 0.05)
+        if filter:
+            for dr in self.dr_list:
+                dr.filter_rows(name, row_names=row_names[indexs[0]])
+        
+        print(f"ANOVA for {name}:")
+        print(f"Number of features with p value less than 0.05: {len(indexs[0])}")
+        print(f"Total number of features: {len(p_values)} \n")
+        
+        return p_values
+    
     def Student_T_Test(self, name, row_names=None, filter=False):
         # Chi-Square Test
         # input: name of the omic
@@ -79,30 +119,14 @@ class Processor:
         indexs = np.where(p_values < 0.05)
         if filter:
             for dr in self.dr_list:
-                dr.filter_rows(name, row_names=indexs[0])
+                dr.filter_rows(name, row_names=row_names[indexs[0]])
+        
         print(f"Student T Test for {name}:")
         print(f"Number of features with p value less than 0.05: {len(indexs[0])}")
         print(f"Total number of features: {len(p_values)} \n")
+        
         return p_values
     
-    def average_correlation(self, correlation_matrices):
-        avg_correlations = []
-        for cancer_type, correlation_matrix in correlation_matrices:
-            avg_corr = np.nanmean(correlation_matrix, axis=1)
-            avg_correlations.append((cancer_type, avg_corr))
-        return avg_correlations
-
-    def plot_comparison(self, avg_correlations, name):
-    # Plot comparison of average correlations
-        plt.figure(figsize=(10, 6))
-        for cancer_type, avg_corr in avg_correlations:
-            plt.plot(avg_corr, label=cancer_type)
-        plt.xlabel(name)
-        plt.ylabel('Average Correlation')
-        plt.title('Average Correlation by Cancer Type')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
 
     def Chi_Square_Test(self, name, row_names, filter=False):
         # Chi-Square Test
@@ -124,45 +148,108 @@ class Processor:
         print(f"Features with p value less than 0.05: {getattr(self.dr_list[0], name).index[indexs[0]]}")
         if filter:
             for dr in self.dr_list:
-                dr.filter_rows(name, row_names=indexs[0])
-        
+                dr.filter_rows(name, row_names=row_names[indexs[0]])
         return p_values
         
     def Pearson_Correlation(self, name):
         correlation_matrices = []
-        for dr in self.dr_list:
-            data_list = []
-            row_names = getattr(dr, name).index
-            for row in row_names:
-                data_list.append(np.array(getattr(dr, name).loc[row].values))
-            data = np.array(data_list).T
-            correlation_matrix = np.corrcoef(data, rowvar=False)
+        df_combined = pd.concat([getattr(dr, name) for dr in self.dr_list], axis=1)
+        
+        data_list = []
+        row_names = df_combined.index
+        for row in row_names:
+            data_list.append(np.array(df_combined.loc[row].values))
+        data = np.array(data_list).T
+        correlation_matrix = np.corrcoef(data, rowvar=False)
 
-            # plt.figure(figsize=(10, 6))
-            # sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f")
-            # plt.title("Correlation Matrix")
-            # plt.show()
-            #print(f"Correlation Matrix for cancer {dr.cancer_type} is: {correlation_matrix}")
-            print(f"Correlation Matrix's shape for cancer {dr.cancer_type} is: {correlation_matrix.shape}\n")
-            correlation_matrices.append((dr.cancer_type, correlation_matrix))
+        # plt.figure(figsize=(10, 6))
+        # sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f")
+        # plt.title("Correlation Matrix")
+        # plt.show()
+        #print(f"Correlation Matrix for cancer {dr.cancer_type} is: {correlation_matrix}")
+        print(f"Correlation Matrix's shape for feature {name} is: {correlation_matrix.shape}\n")
+        correlation_matrices.append((name, correlation_matrix))
         return correlation_matrices
+    
+    def filter_feature_by_correlation(self, correlation_matrices, threshold=0.5, filter=False):
+        for name, correlation_matrix in correlation_matrices:
+            # Filter features based on correlation matrix
+            # Get the upper triangle of the correlation matrix
+            upper_triangle = np.triu(correlation_matrix, k=1)
+            # Get the indices of the features that are highly correlated
+            correlated_features = np.where(np.abs(upper_triangle) > threshold)
+            # Get the names of the features
+            feature_names = getattr(self.dr_list[0], name).index
+            # Filter the features
+            features_to_remove = set()
+            for i, j in zip(*correlated_features):
+                if (feature_names[i] not in features_to_remove) and (feature_names[j] not in features_to_remove):
+                    features_to_remove.add(feature_names[i])
+            print(f"Features to remove for feature type {name} are: {features_to_remove}\n")
+            if filter:
+                for dr in self.dr_list:
+                    dr.filter_rows(name, row_names=feature_names.difference(features_to_remove))
 
-    def perform_pca_for_each_omic(self):
-        for omic_type in self.names:
-            for data_reader in self.dr_list:
-                omic_data = getattr(data_reader, omic_type)
-                #print(omic_data)
-                if omic_data.shape[0] == 0:
-                    continue  # Skip if data is missing or empty
-                # Normalize the data
-                scaler = StandardScaler()
-                omic_data_normalized = scaler.fit_transform(omic_data)
-                pca = PCA(n_components=2)  # Specify the number of components
-                principal_components = pca.fit_transform(omic_data_normalized)
-                self.visualize_pca(principal_components, omic_type, data_reader)
-                #self.visualize_pca_3d(principal_components, omic_type, data_reader)
-                
-    def visualize_pca(self, principal_components, omic_type, data_reader):
+    def average_correlation(self, correlation_matrices):
+        avg_correlations = []
+        for cancer_type, correlation_matrix in correlation_matrices:
+            avg_corr = np.nanmean(correlation_matrix, axis=1)
+            avg_correlations.append((cancer_type, avg_corr))
+        return avg_correlations
+
+    def plot_comparison(self, avg_correlations, name):
+    # Plot comparison of average correlations
+        plt.figure(figsize=(10, 6))
+        for cancer_type, avg_corr in avg_correlations:
+            plt.plot(avg_corr, label=cancer_type)
+        plt.xlabel(name)
+        plt.ylabel('Average Correlation')
+        plt.title('Average Correlation by Cancer Type')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(f'{name}_correlation.png', )
+        # plt.show()
+        
+    def pca(self, name):
+        df_combined = pd.concat([getattr(dr, name) for dr in self.dr_list], axis=1).T
+        labels = []
+        for dr in self.dr_list:
+            labels.extend([dr.cancer_type] * len(getattr(dr, name).columns))
+        # Normalize the data
+        scaler = StandardScaler()
+        omic_data_normalized = scaler.fit_transform(df_combined)
+        pca = PCA(n_components=30)  # Specify the number of components
+        principal_components = pca.fit_transform(omic_data_normalized)
+        print(f"pc: {principal_components.shape}")
+        # df_pca = pd.DataFrame(data=principal_components,) # N_samples, N_features(30)
+        self.tsne_visualization(principal_components, name, labels=labels)
+        #self.visualize_pca_3d(principal_components, omic_type, data_reader)
+        
+    # data: N_samples, N_features
+    def tsne_visualization(self, data, name, labels):
+        COLORS = ['r', 'b', 'g', 'c', 'm', 'y', 'k', 'orange', 'purple', 'brown']
+        scaler = StandardScaler()
+        data_scaled = scaler.fit_transform(data)
+        tsne = TSNE(n_components=2, random_state=42)
+        # tsne transform
+        tsne_data = tsne.fit_transform(data_scaled)
+        unique_labels = np.unique(labels)
+        plt.figure(figsize=(10, 8))
+        for idx in range(data.shape[0]):
+            # import pdb; pdb.set_trace()
+            color = COLORS[int(np.where(labels[idx] == unique_labels)[0])]
+            if idx == 0 or labels[idx] != labels[idx-1]:
+                plt.scatter(tsne_data[idx, 0], tsne_data[idx, 1], label=labels[idx], c=color, cmap='viridis', edgecolor='k', s=50)
+            else:
+                plt.scatter(tsne_data[idx, 0], tsne_data[idx, 1], c=color, cmap='viridis', edgecolor='k', s=50)
+        plt.legend()
+        plt.title(f't-SNE visualization of {name} data')
+        plt.xlabel('t-SNE 1')
+        plt.ylabel('t-SNE 2')
+        plt.savefig(f'{name}_tsne.png')
+        
+    def visualize_pca(self, principal_components, name):
+        df_combined = pd.concat([getattr(dr, name) for dr in self.dr_list], axis=1).T
         # Visualize PCA results
         plt.figure(figsize=(8, 6))
         plt.scatter(principal_components[:, 0], principal_components[:, 1], marker='o', edgecolors='k')
@@ -172,10 +259,11 @@ class Processor:
         
         # Add DataReader name (disease name) as annotation
         plt.text(0.05, 0.95, f'Disease: {data_reader.cancer_type}', transform=plt.gca().transAxes, fontsize=12,
-                 verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.5))
+                    verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.5))
 
         plt.grid(True)
-        plt.show()
+        plt.savefig(f'{omic_type}_pca.png')
+        # plt.show()
 
     def visualize_pca_3d(self, principal_components, omic_type, data_reader):
         fig = plt.figure(figsize=(8, 6))
@@ -193,19 +281,23 @@ if __name__ == "__main__":
     data_path_list = ["data/filtered_common_features/aml", "data/filtered_common_features/sarcoma",]
     processor = Processor(data_path_list)
     
-    for name in [ 'mirna', 'exp']:
+    for name in ['methy']:
         print("************************************************")
         print("Analysis for category:", name)
         print("************************************************\n")
 
-        normality_results = processor.norm_evaluation(name)
-
-        p_values = processor.Student_T_Test(name)
+        # normality_results = processor.norm_evaluation(name)
+        # processor.box_cox_transformation(name)
+        # normality_results = processor.norm_evaluation(name)
+        p_values = processor.ANOVA_Test(name, filter=True)
+        # p_values = processor.Student_T_Test(name, filter=True)
         #print("P-values:", p_values)
 
         correlation_matrices = processor.Pearson_Correlation(name)
-        
-        avg_correlations = processor.average_correlation(correlation_matrices)
-       
-        processor.plot_comparison(avg_correlations, name)
-    processor.perform_pca_for_each_omic()
+        processor.filter_feature_by_correlation(correlation_matrices,\
+                                            threshold=0.75, filter=True)
+        # correlation_matrices = processor.Pearson_Correlation(name)
+        # avg_correlations = processor.average_correlation(correlation_matrices)
+        processor.pca(name)
+        # processor.plot_comparison(avg_correlations, name)
+    # processor.perform_pca_for_each_omic()

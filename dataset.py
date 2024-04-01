@@ -15,6 +15,8 @@ class DataReader:
             df = pd.read_csv(omic_path, sep=' ')
         except:
             df = pd.read_csv(omic_path, sep='\t')
+        # print(f"Shape: {df.shape}")
+        
         # import pdb; pdb.set_trace()
         # df.index: get rows name
         # df.columns: get columns name
