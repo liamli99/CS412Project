@@ -19,6 +19,8 @@ class PreProcessor:
         # transpose the clinical data
         # still need to replace '-' with '.'
         for dr in self.dr_list:
+            print(f"dr.cancer_type: {dr.cancer_type}")
+            # import pdb; pdb.set_trace()
             dr.clinical = pd.get_dummies(dr.clinical, columns=['gender', 'history_of_neoadjuvant_treatment', 'vital_status'])
             dr.clinical.index = dr.clinical.index.str.replace("-", ".", regex=False)
             dr.clinical = dr.clinical.T
@@ -55,12 +57,20 @@ class PreProcessor:
             dr.save_data(os.path.join(path_to_save, dr.cancer_type))
 
 if __name__ == "__main__":
-    data_path_list = ["data/origin/aml", "data/origin/sarcoma",]
+    data_path_list = ["data/origin/aml", "data/origin/sarcoma", "data/origin/liver", "data/origin/melanoma",]
+    
+    # "data/origin/overian", 
+    # "data/origin/gbm", 
+    
+    # "data/origin/aml", "data/origin/sarcoma", "data/origin/liver", "data/origin/melanoma",
+    # "data/origin/kidney", 
+    
+    # "data/origin/breast", "data/origin/colon", "data/origin/lung",
     processor = PreProcessor(data_path_list)
     # import pdb; pdb.set_trace()
     processor.transform_clinical_data()
     # import pdb; pdb.set_trace()
     processor.filter_common_features()
-    processor.filter_irrelevant_features()
+    # processor.filter_irrelevant_features()
     # import pdb; pdb.set_trace()
     processor.save_data("data/filtered_common_features")

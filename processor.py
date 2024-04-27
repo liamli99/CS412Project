@@ -11,6 +11,11 @@ from sklearn.manifold import TSNE
 import seaborn as sns
 from scipy.stats import chi2_contingency
 import warnings
+from sklearn.linear_model import Lasso
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
 
 warnings.filterwarnings('ignore', category=UserWarning)
 warnings.filterwarnings('ignore', category=RuntimeWarning)
@@ -26,13 +31,14 @@ class Processor:
             self.dr_list.append(DataReader(path, self.names))
     
     def normalize(self, name, row_names=None):
+        # import pdb; pdb.set_trace()
         if row_names is not None:
             dr_combined = pd.concat([getattr(dr, name).loc[row_names] for dr in self.dr_list], axis=1).T
             mean = dr_combined.mean()
             std = dr_combined.std()
             for dr in self.dr_list:
                 data = getattr(dr, name).loc[row_names].T
-                data = (data - mean) / std
+                data = (data - mean) / (std+1e-6)
                 exec(f"dr.{name}.loc[{row_names}] = data.T")
         else:
             dr_combined = pd.concat([getattr(dr, name) for dr in self.dr_list], axis=1).T
@@ -40,7 +46,7 @@ class Processor:
             std = dr_combined.std()
             for dr in self.dr_list:
                 data = getattr(dr, name).T
-                data = (data - mean) / std
+                data = (data - mean) / (std+1e-6)
                 setattr(dr, name, data.T)
     
     # evaluate whether the data follows normal distribution
@@ -85,7 +91,6 @@ class Processor:
             for dr in self.dr_list:
                 data.append(np.array(getattr(dr, name).loc[row].values))
             # import pdb; pdb.set_trace()
-            # TODO: should evaluate the variance of the two groups first: stats.levene(A, B) 
             stat, p_value = stats.f_oneway(data[0],data[1])
             p_values.append(p_value)
         p_values = np.array(p_values)
@@ -171,7 +176,8 @@ class Processor:
         correlation_matrices.append((name, correlation_matrix))
         return correlation_matrices
     
-    def filter_feature_by_correlation(self, correlation_matrices, threshold=0.5, filter=False):
+    def filter_feature_by_correlation(self, name, threshold=0.5, filter=False):
+        correlation_matrices = self.Pearson_Correlation(name)
         for name, correlation_matrix in correlation_matrices:
             # Filter features based on correlation matrix
             # Get the upper triangle of the correlation matrix
@@ -189,26 +195,35 @@ class Processor:
             if filter:
                 for dr in self.dr_list:
                     dr.filter_rows(name, row_names=feature_names.difference(features_to_remove))
-
-    def average_correlation(self, correlation_matrices):
-        avg_correlations = []
-        for cancer_type, correlation_matrix in correlation_matrices:
-            avg_corr = np.nanmean(correlation_matrix, axis=1)
-            avg_correlations.append((cancer_type, avg_corr))
-        return avg_correlations
-
-    def plot_comparison(self, avg_correlations, name):
-    # Plot comparison of average correlations
-        plt.figure(figsize=(10, 6))
-        for cancer_type, avg_corr in avg_correlations:
-            plt.plot(avg_corr, label=cancer_type)
-        plt.xlabel(name)
-        plt.ylabel('Average Correlation')
-        plt.title('Average Correlation by Cancer Type')
-        plt.legend()
-        plt.grid(True)
-        plt.savefig(f'{name}_correlation.png', )
-        # plt.show()
+    
+    def filter_feature_by_average(self, name, top_k=0.5, filter=False):
+        row_names = getattr(self.dr_list[0], name).index
+        filtered_row_names = []
+        avg_diff = []
+        import pdb; pdb.set_trace()
+        for row in row_names:
+            data = []
+            for dr in self.dr_list:
+                data.append(np.array(getattr(dr, name).loc[row].values))
+            avg_diff.append(np.abs(np.mean(data[0]) - np.mean(data[1])))
+        avg_diff = np.array(avg_diff)
+        indexs = np.argsort(avg_diff)
+        filtered_row_names = row_names[indexs[:int(top_k*len(row_names))]]
+        if filter:
+            for dr in self.dr_list:
+                dr.filter_rows(name, row_names=filtered_row_names)
+    
+    def filter_feature_by_variance(self, name, top_k=0.5, filter=False):
+        df_combined = pd.concat([getattr(dr, name) for dr in self.dr_list], axis=1).T
+        # calculate the variance of each feature
+        variances = df_combined.var(axis=1)
+        # sort the features based on variance
+        sorted_variances = variances.sort_values(ascending=False)
+        # get the top k features
+        top_k_features = sorted_variances.index[:int(top_k*len(sorted_variances))]
+        if filter:
+            for dr in self.dr_list:
+                dr.filter_rows(name, row_names=top_k_features)
         
     def pca(self, name, n_components=30):
         df_combined = pd.concat([getattr(dr, name) for dr in self.dr_list], axis=1).T
@@ -224,7 +239,31 @@ class Processor:
         # df_pca = pd.DataFrame(data=principal_components,) # N_samples, N_features(30)
         self.tsne_visualization(principal_components, name, labels=labels)
         #self.visualize_pca_3d(principal_components, omic_type, data_reader)
-        
+    
+    # multi variable analysis
+    def LASSO_regression(self, name, filter=False):
+        X = []
+        y = []
+        for i, dr in enumerate(self.dr_list):
+            num_samples = np.array(getattr(dr, name).T).shape[0]
+            X.append(np.array(getattr(dr, name).T))
+            y.append(np.array(num_samples*[i]))
+        X = np.concatenate(X, axis=0)
+        y = np.concatenate(y, axis=0)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+        lasso_logistic = LogisticRegression(penalty='l1', solver='liblinear', C=1.0, random_state=42)
+        # import pdb; pdb.set_trace()
+        lasso_logistic.fit(X_train, y_train)
+
+        y_pred = lasso_logistic.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        print(f"LASSO Regression Accuracy: {accuracy}")
+        print(f"Num of features used in LASSO: {np.sum(lasso_logistic.coef_ != 0)}")
+        import pdb; pdb.set_trace()
+        if filter:
+            for dr in self.dr_list:
+                dr.filter_rows(name, row_names=lasso_logistic.coef_ != 0)
+    
     # data: N_samples, N_features
     def tsne_visualization(self, data, name, labels):
         COLORS = ['r', 'b', 'g', 'c', 'm', 'y', 'k', 'orange', 'purple', 'brown']
@@ -247,45 +286,42 @@ class Processor:
         plt.xlabel('t-SNE 1')
         plt.ylabel('t-SNE 2')
         plt.savefig(f'{name}_tsne.png')
-        
-    def visualize_pca(self, principal_components, name):
-        df_combined = pd.concat([getattr(dr, name) for dr in self.dr_list], axis=1).T
-        # Visualize PCA results
-        plt.figure(figsize=(8, 6))
-        plt.scatter(principal_components[:, 0], principal_components[:, 1], marker='o', edgecolors='k')
-        plt.title(f'PCA Visualization for {omic_type} Data ({data_reader.cancer_type})')
-        plt.xlabel('Principal Component 1')
-        plt.ylabel('Principal Component 2')
-        
-        # Add DataReader name (disease name) as annotation
-        plt.text(0.05, 0.95, f'Disease: {data_reader.cancer_type}', transform=plt.gca().transAxes, fontsize=12,
-                    verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.5))
+    
+    def average_correlation(self, correlation_matrices):
+        avg_correlations = []
+        for cancer_type, correlation_matrix in correlation_matrices:
+            avg_corr = np.nanmean(correlation_matrix, axis=1)
+            avg_correlations.append((cancer_type, avg_corr))
+        return avg_correlations
 
+    def plot_comparison(self, avg_correlations, name):
+    # Plot comparison of average correlations
+        plt.figure(figsize=(10, 6))
+        for cancer_type, avg_corr in avg_correlations:
+            plt.plot(avg_corr, label=cancer_type)
+        plt.xlabel(name)
+        plt.ylabel('Average Correlation')
+        plt.title('Average Correlation by Cancer Type')
+        plt.legend()
         plt.grid(True)
-        plt.savefig(f'{omic_type}_pca.png')
+        plt.savefig(f'{name}_correlation.png', )
         # plt.show()
-
-    def visualize_pca_3d(self, principal_components, omic_type, data_reader):
-        fig = plt.figure(figsize=(8, 6))
-        ax = fig.add_subplot(111, projection='3d')
-
-        ax.scatter(principal_components[:, 0], principal_components[:, 1], principal_components[:, 2], alpha=0.5)
-        ax.set_title(f'PCA 3D Visualization for {omic_type}')
-        ax.set_xlabel('Principal Component 1')
-        ax.set_ylabel('Principal Component 2')
-        ax.set_zlabel('Principal Component 3')
-        plt.show()
 
     
 if __name__ == "__main__":
-    data_path_list = ["data/filtered_common_features/aml", "data/filtered_common_features/sarcoma",]
+    data_path_list = ["data/filtered_common_features/aml", "data/filtered_common_features/liver", \
+        "data/filtered_common_features/melanoma", "data/filtered_common_features/sarcoma",]
+    # data_path_list = ["data/origin/breast", "data/origin/colon", "data/origin/lung", ]
     processor = Processor(data_path_list)
     
-    for name in ['methy', 'mirna']:
+    for name in ['exp', 'methy', 'mirna',   ]: # 'methy', 'mirna'
         print("************************************************")
         print("Analysis for category:", name)
         print("************************************************\n")
+        # import pdb; pdb.set_trace()
         processor.normalize(name)
+        processor.LASSO_regression(name)
+        processor.filter_feature_by_variance(name, top_k=0.1, filter=False)
         normality_results = processor.norm_evaluation(name, alpha=0.05)
         # dd
         # processor.box_cox_transformation(name)
@@ -293,9 +329,7 @@ if __name__ == "__main__":
         p_values = processor.ANOVA_Test(name, filter=True)
         # p_values = processor.Student_T_Test(name, filter=True)
         # print("P-values:", p_values)
-
-        correlation_matrices = processor.Pearson_Correlation(name)
-        processor.filter_feature_by_correlation(correlation_matrices,\
+        processor.filter_feature_by_correlation(name,\
                                             threshold=0.75, filter=True)
         correlation_matrices = processor.Pearson_Correlation(name)
         # avg_correlations = processor.average_correlation(correlation_matrices)
