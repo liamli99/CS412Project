@@ -185,7 +185,7 @@ class Processor:
             for i, j in zip(*correlated_features):
                 if (feature_names[i] not in features_to_remove) and (feature_names[j] not in features_to_remove):
                     features_to_remove.add(feature_names[i])
-            print(f"Features to remove for feature type {name} are: {features_to_remove}\n")
+            # print(f"Features to remove for feature type {name} are: {features_to_remove}\n")
             if filter:
                 for dr in self.dr_list:
                     dr.filter_rows(name, row_names=feature_names.difference(features_to_remove))
@@ -210,7 +210,7 @@ class Processor:
         plt.savefig(f'{name}_correlation.png', )
         # plt.show()
         
-    def pca(self, name):
+    def pca(self, name, n_components=30):
         df_combined = pd.concat([getattr(dr, name) for dr in self.dr_list], axis=1).T
         labels = []
         for dr in self.dr_list:
@@ -218,7 +218,7 @@ class Processor:
         # Normalize the data
         scaler = StandardScaler()
         omic_data_normalized = scaler.fit_transform(df_combined)
-        pca = PCA(n_components=30)  # Specify the number of components
+        pca = PCA(n_components=n_components)  # Specify the number of components
         principal_components = pca.fit_transform(omic_data_normalized)
         print(f"pc: {principal_components.shape}")
         # df_pca = pd.DataFrame(data=principal_components,) # N_samples, N_features(30)
@@ -281,23 +281,24 @@ if __name__ == "__main__":
     data_path_list = ["data/filtered_common_features/aml", "data/filtered_common_features/sarcoma",]
     processor = Processor(data_path_list)
     
-    for name in ['methy']:
+    for name in ['methy', 'mirna']:
         print("************************************************")
         print("Analysis for category:", name)
         print("************************************************\n")
-
-        # normality_results = processor.norm_evaluation(name)
+        processor.normalize(name)
+        normality_results = processor.norm_evaluation(name, alpha=0.05)
+        # dd
         # processor.box_cox_transformation(name)
         # normality_results = processor.norm_evaluation(name)
         p_values = processor.ANOVA_Test(name, filter=True)
         # p_values = processor.Student_T_Test(name, filter=True)
-        #print("P-values:", p_values)
+        # print("P-values:", p_values)
 
         correlation_matrices = processor.Pearson_Correlation(name)
         processor.filter_feature_by_correlation(correlation_matrices,\
                                             threshold=0.75, filter=True)
-        # correlation_matrices = processor.Pearson_Correlation(name)
+        correlation_matrices = processor.Pearson_Correlation(name)
         # avg_correlations = processor.average_correlation(correlation_matrices)
-        processor.pca(name)
+        processor.pca(name, n_components=0.9)
         # processor.plot_comparison(avg_correlations, name)
     # processor.perform_pca_for_each_omic()
