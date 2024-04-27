@@ -15,6 +15,7 @@ from sklearn.linear_model import Lasso
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 
 warnings.filterwarnings('ignore', category=UserWarning)
@@ -101,7 +102,6 @@ class Processor:
         
         print(f"ANOVA for {name}:")
         print(f"Number of features with p value less than 0.05: {len(indexs[0])}")
-        print(f"Total number of features: {len(p_values)} \n")
         
         return p_values
     
@@ -162,6 +162,7 @@ class Processor:
         
         data_list = []
         row_names = df_combined.index
+        
         for row in row_names:
             data_list.append(np.array(df_combined.loc[row].values))
         data = np.array(data_list).T
@@ -181,6 +182,7 @@ class Processor:
         for name, correlation_matrix in correlation_matrices:
             # Filter features based on correlation matrix
             # Get the upper triangle of the correlation matrix
+            
             upper_triangle = np.triu(correlation_matrix, k=1)
             # Get the indices of the features that are highly correlated
             correlated_features = np.where(np.abs(upper_triangle) > threshold)
@@ -191,7 +193,7 @@ class Processor:
             for i, j in zip(*correlated_features):
                 if (feature_names[i] not in features_to_remove) and (feature_names[j] not in features_to_remove):
                     features_to_remove.add(feature_names[i])
-            # print(f"Features to remove for feature type {name} are: {features_to_remove}\n")
+            print(f"Features left after correlation for {name} are: {len(feature_names) - len(features_to_remove)}\n")
             if filter:
                 for dr in self.dr_list:
                     dr.filter_rows(name, row_names=feature_names.difference(features_to_remove))
@@ -200,7 +202,7 @@ class Processor:
         row_names = getattr(self.dr_list[0], name).index
         filtered_row_names = []
         avg_diff = []
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         for row in row_names:
             data = []
             for dr in self.dr_list:
@@ -209,6 +211,8 @@ class Processor:
         avg_diff = np.array(avg_diff)
         indexs = np.argsort(avg_diff)
         filtered_row_names = row_names[indexs[:int(top_k*len(row_names))]]
+        
+        print(f"Total number of features after filter_feature_by_average: {len(filtered_row_names)} \n")
         if filter:
             for dr in self.dr_list:
                 dr.filter_rows(name, row_names=filtered_row_names)
@@ -216,11 +220,12 @@ class Processor:
     def filter_feature_by_variance(self, name, top_k=0.5, filter=False):
         df_combined = pd.concat([getattr(dr, name) for dr in self.dr_list], axis=1).T
         # calculate the variance of each feature
-        variances = df_combined.var(axis=1)
+        variances = df_combined.var(axis=0)
         # sort the features based on variance
         sorted_variances = variances.sort_values(ascending=False)
         # get the top k features
         top_k_features = sorted_variances.index[:int(top_k*len(sorted_variances))]
+        print(f"Total number of features after filter_feature_by_variance: {len(top_k_features)} \n")
         if filter:
             for dr in self.dr_list:
                 dr.filter_rows(name, row_names=top_k_features)
@@ -233,6 +238,7 @@ class Processor:
         # Normalize the data
         scaler = StandardScaler()
         omic_data_normalized = scaler.fit_transform(df_combined)
+        import pdb; pdb.set_trace()
         pca = PCA(n_components=n_components)  # Specify the number of components
         principal_components = pca.fit_transform(omic_data_normalized)
         print(f"pc: {principal_components.shape}")
@@ -244,6 +250,7 @@ class Processor:
     def LASSO_regression(self, name, filter=False):
         X = []
         y = []
+        row_names = getattr(self.dr_list[0], name).index
         for i, dr in enumerate(self.dr_list):
             num_samples = np.array(getattr(dr, name).T).shape[0]
             X.append(np.array(getattr(dr, name).T))
@@ -252,17 +259,58 @@ class Processor:
         y = np.concatenate(y, axis=0)
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
         lasso_logistic = LogisticRegression(penalty='l1', solver='liblinear', C=1.0, random_state=42)
-        # import pdb; pdb.set_trace()
+        
         lasso_logistic.fit(X_train, y_train)
 
         y_pred = lasso_logistic.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
+        
+        index = np.where(np.sum(lasso_logistic.coef_, axis=0) != 0)
         print(f"LASSO Regression Accuracy: {accuracy}")
-        print(f"Num of features used in LASSO: {np.sum(lasso_logistic.coef_ != 0)}")
-        import pdb; pdb.set_trace()
+        print(f"Num of features used in LASSO: {len(index[0])}")
+        filtered_rows = row_names[index] 
+        # import pdb; pdb.set_trace()
         if filter:
             for dr in self.dr_list:
-                dr.filter_rows(name, row_names=lasso_logistic.coef_ != 0)
+                dr.filter_rows(name, row_names=filtered_rows)
+    
+    # multi variable analysis
+    def RandomForest(self, name, filter=False):
+        X = []
+        y = []
+        row_names = getattr(self.dr_list[0], name).index
+        for i, dr in enumerate(self.dr_list):
+            num_samples = np.array(getattr(dr, name).T).shape[0]
+            X.append(np.array(getattr(dr, name).T))
+            y.append(np.array(num_samples*[i]))
+        X = np.concatenate(X, axis=0)
+        y = np.concatenate(y, axis=0)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+        rf = RandomForestClassifier(n_estimators=100, random_state=42)
+
+        rf.fit(X_train, y_train)
+
+        feature_importances = rf.feature_importances_
+        sorted_feature_importances = np.sort(feature_importances, )[::-1]
+        sorted_feature_importances_index = np.argsort(feature_importances)[::-1]
+        sum = 0.0
+        filtered_rows = []
+        for idx, importance in zip(sorted_feature_importances_index, sorted_feature_importances):
+            sum += importance
+            filtered_rows.append(row_names[idx])
+            if sum > 0.9:
+                break
+        
+        y_pred = rf.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        import pdb; pdb.set_trace()
+        
+        print(f"RandomForest Accuracy: {accuracy}")
+        print(f"Num of features used in RandomForest: {len(filtered_rows)}")
+        # import pdb; pdb.set_trace()
+        if filter:
+            for dr in self.dr_list:
+                dr.filter_rows(name, row_names=filtered_rows)
     
     # data: N_samples, N_features
     def tsne_visualization(self, data, name, labels):
@@ -320,19 +368,18 @@ if __name__ == "__main__":
         print("************************************************\n")
         # import pdb; pdb.set_trace()
         processor.normalize(name)
-        processor.LASSO_regression(name)
-        processor.filter_feature_by_variance(name, top_k=0.1, filter=False)
-        normality_results = processor.norm_evaluation(name, alpha=0.05)
-        # dd
-        # processor.box_cox_transformation(name)
-        # normality_results = processor.norm_evaluation(name)
+        # normality_results = processor.norm_evaluation(name, alpha=0.05)
         p_values = processor.ANOVA_Test(name, filter=True)
+        processor.filter_feature_by_average(name, top_k=0.7, filter=True)
+        processor.filter_feature_by_variance(name, top_k=0.7, filter=True)
         # p_values = processor.Student_T_Test(name, filter=True)
         # print("P-values:", p_values)
         processor.filter_feature_by_correlation(name,\
                                             threshold=0.75, filter=True)
-        correlation_matrices = processor.Pearson_Correlation(name)
+        processor.RandomForest(name, filter=True)
+        # correlation_matrices = processor.Pearson_Correlation(name)
         # avg_correlations = processor.average_correlation(correlation_matrices)
         processor.pca(name, n_components=0.9)
+        
         # processor.plot_comparison(avg_correlations, name)
     # processor.perform_pca_for_each_omic()
