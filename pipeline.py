@@ -7,28 +7,67 @@ from dataset import DataReader
 from processor import Processor
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+from classifier import Classifier
 import warnings
 
 class Pipeline:
     def __init__(self, data_path_list):
         self.processor = Processor(data_path_list)
-        self.names = ['clinical', 'exp', 'methy', 'mirna', ]
+        self.names = ['exp', 'methy', 'mirna', ] # 'clinical', 
+        self.models = ['RandomForest', 'LogisticRegression', 'SVM', 'KNN', 'XGBoost']
         self.pipeline = {}
         self.pipeline['clinical'] = []
-        self.pipeline['exp'] = []
-        self.pipeline['methy'] = [
+        self.pipeline['exp'] = [
             {'func':self.processor.normalize, 'params':{}}, \
-            {'func':self.processor.norm_evaluation, 'params':{'alpha':0.05}}, \
-            {'func':self.processor.Student_T_Test, 'params':{'filter':True}}]
+            {'func':self.processor.ANOVA_Test, 'params':{'filter':True}}, \
+            {'func':self.processor.filter_feature_by_average, 'params':{'top_k':0.2, 'filter':True}}, \
+            {'func':self.processor.filter_feature_by_variance, 'params':{'top_k':0.1, 'filter':True}}, \
+            {'func':self.processor.filter_feature_by_correlation, 'params':{'threshold':0.3, 'filter':True}}, \
+            {'func':self.processor.LASSO_regression, 'params':{'filter':True}}
+        ]
+        self.pipeline['methy'] = [
+            ]
+        # {'func':self.processor.normalize, 'params':{}}, \
+        #     {'func':self.processor.norm_evaluation, 'params':{'alpha':0.05}}, \
+        #     {'func':self.processor.Student_T_Test, 'params':{'filter':True}}
         self.pipeline['mirna'] = []
     
-    def run(self,):
+    def feature_engineering(self,):
         for name in self.names:
+            print(f"Processing {name} data...")
             for step in self.pipeline[name]:
                 step['func'](name, **step['params'])
+        self.processor.combine_omics()
+        self.processor.LASSO_regression('combined', filter=True)
+    
+    def train_test_split(self, name):
+        spliter = self.processor.kfold_cross_validation(name)
+        return spliter
+    
+    def evaluate(self, ):
+        for name in self.names:
+            for model in self.models:
+                print(f"Evaluating {name} data use {model}...")
+                kfold_spliter = self.train_test_split(name)
+                for X_train, X_test, y_train, y_test in kfold_spliter:
+                    classifier = Classifier(model_name=model)
+                    classifier.train(X_train, y_train)
+                    classifier.predict(X_test, y_test)
+                    # classifier.draw_roc_curve(X_test, y_test)
+    
+    def evaluate_multi_omics(self,):
+        for model in self.models:
+            kfold_spliter = self.train_test_split('combined')
+            for X_train, X_test, y_train, y_test in kfold_spliter:
+                classifier = Classifier(model_name=model)
+                classifier.train(X_train, y_train)
+                classifier.predict(X_test, y_test)
+                # classifier.draw_roc_curve(X_test, y_test)
 
 if __name__ == "__main__":
-    data_path_list = ["data/filtered_common_features/aml", "data/filtered_common_features/sarcoma",]
+    data_path_list = ["data/filtered_common_features/aml", "data/filtered_common_features/liver", \
+        "data/filtered_common_features/melanoma", "data/filtered_common_features/sarcoma",]
     pip = Pipeline(data_path_list)
-    pip.run()
+    pip.feature_engineering()
+    pip.evaluate()
+    pip.evaluate_multi_omics()

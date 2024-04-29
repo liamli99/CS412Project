@@ -71,6 +71,6 @@ if __name__ == "__main__":
     processor.transform_clinical_data()
     # import pdb; pdb.set_trace()
     processor.filter_common_features()
-    # processor.filter_irrelevant_features()
+    processor.filter_irrelevant_features()
     # import pdb; pdb.set_trace()
     processor.save_data("data/filtered_common_features")

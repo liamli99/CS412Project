@@ -48,6 +48,10 @@ class DataReader:
         condition = getattr(self, name).index.isin(row_names)
         setattr(self, name, getattr(self, name)[condition])
 
+    def filter_cols(self, name, col_names):
+        condition = getattr(self, name).T.index.isin(col_names)
+        setattr(self, name, getattr(self, name).T[condition].T)
+        
 if __name__ == "__main__":
     path = "data/origin/aml"
     data = DataReader(path)

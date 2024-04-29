@@ -17,7 +17,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
-
+from sklearn.model_selection import KFold
 warnings.filterwarnings('ignore', category=UserWarning)
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -27,10 +27,11 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 class Processor:
     def __init__(self, data_path_list):
         self.dr_list = []
-        self.names = ['clinical', 'exp', 'methy', 'mirna', ]
+        self.names = ['exp', 'methy', 'mirna', ] # 'clinical', 
         for path in data_path_list:
             self.dr_list.append(DataReader(path, self.names))
-    
+        self.get_common_patient(filter=True)
+        
     def normalize(self, name, row_names=None):
         # import pdb; pdb.set_trace()
         if row_names is not None:
@@ -248,16 +249,8 @@ class Processor:
     
     # multi variable analysis
     def LASSO_regression(self, name, filter=False):
-        X = []
-        y = []
         row_names = getattr(self.dr_list[0], name).index
-        for i, dr in enumerate(self.dr_list):
-            num_samples = np.array(getattr(dr, name).T).shape[0]
-            X.append(np.array(getattr(dr, name).T))
-            y.append(np.array(num_samples*[i]))
-        X = np.concatenate(X, axis=0)
-        y = np.concatenate(y, axis=0)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+        X_train, X_test, y_train, y_test = self.vanilla_train_test_split(name)
         lasso_logistic = LogisticRegression(penalty='l1', solver='liblinear', C=1.0, random_state=42)
         
         lasso_logistic.fit(X_train, y_train)
@@ -276,16 +269,8 @@ class Processor:
     
     # multi variable analysis
     def RandomForest(self, name, filter=False):
-        X = []
-        y = []
         row_names = getattr(self.dr_list[0], name).index
-        for i, dr in enumerate(self.dr_list):
-            num_samples = np.array(getattr(dr, name).T).shape[0]
-            X.append(np.array(getattr(dr, name).T))
-            y.append(np.array(num_samples*[i]))
-        X = np.concatenate(X, axis=0)
-        y = np.concatenate(y, axis=0)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+        X_train, X_test, y_train, y_test = self.vanilla_train_test_split(name)
         rf = RandomForestClassifier(n_estimators=100, random_state=42)
 
         rf.fit(X_train, y_train)
@@ -303,7 +288,7 @@ class Processor:
         
         y_pred = rf.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         
         print(f"RandomForest Accuracy: {accuracy}")
         print(f"Num of features used in RandomForest: {len(filtered_rows)}")
@@ -311,6 +296,23 @@ class Processor:
         if filter:
             for dr in self.dr_list:
                 dr.filter_rows(name, row_names=filtered_rows)
+    
+    def get_common_patient(self, filter=False):
+        df_combined = pd.concat([getattr(dr, self.names[0]) for dr in self.dr_list], axis=1).T
+        patient_ids = set(df_combined.index)
+        for name in self.names:
+            df_name_combined = pd.concat([getattr(dr, name) for dr in self.dr_list], axis=1).T
+            patient_ids = patient_ids.intersection(set(df_name_combined.index))
+        patient_ids = list(patient_ids)
+        if filter:
+            for dr in self.dr_list:
+                for name in self.names:
+                    dr.filter_cols(name, col_names=patient_ids)
+    
+    def combine_omics(self,):
+        for dr in self.dr_list:
+            df_combined = pd.concat([getattr(dr, name) for name in self.names], axis=0)
+            setattr(dr, 'combined', df_combined)
     
     # data: N_samples, N_features
     def tsne_visualization(self, data, name, labels):
@@ -334,6 +336,36 @@ class Processor:
         plt.xlabel('t-SNE 1')
         plt.ylabel('t-SNE 2')
         plt.savefig(f'{name}_tsne.png')
+    
+    def vanilla_train_test_split(self, name):
+        X = []
+        y = []
+        for i, dr in enumerate(self.dr_list):
+            num_samples = np.array(getattr(dr, name).T).shape[0]
+            X.append(np.array(getattr(dr, name).T))
+            y.append(np.array(num_samples*[i]))
+        X = np.concatenate(X, axis=0)
+        y = np.concatenate(y, axis=0)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=42)
+        return X_train, X_test, y_train, y_test
+    
+    def kfold_cross_validation(self, name, k=5):
+        # implement kfold cross validation train-test split here
+        X = []
+        y = []
+        for i, dr in enumerate(self.dr_list):
+            num_samples = np.array(getattr(dr, name).T).shape[0]
+            X.append(np.array(getattr(dr, name).T))
+            y.append(np.array(num_samples*[i]))
+        X = np.concatenate(X, axis=0)
+        y = np.concatenate(y, axis=0)
+        kf = KFold(n_splits=k, shuffle=True, random_state=42)
+        # how to use kf.split(X)
+        for train_index, test_index in kf.split(X):
+            X_train, X_test = X[train_index], X[test_index]
+            y_train, y_test = y[train_index], y[test_index]
+            yield X_train, X_test, y_train, y_test
+        
     
     def average_correlation(self, correlation_matrices):
         avg_correlations = []
@@ -362,7 +394,7 @@ if __name__ == "__main__":
     # data_path_list = ["data/origin/breast", "data/origin/colon", "data/origin/lung", ]
     processor = Processor(data_path_list)
     
-    for name in ['exp', 'methy', 'mirna',   ]: # 'methy', 'mirna'
+    for name in ['methy', 'exp',  'mirna',   ]: # 'methy', 'mirna'
         print("************************************************")
         print("Analysis for category:", name)
         print("************************************************\n")
@@ -370,16 +402,17 @@ if __name__ == "__main__":
         processor.normalize(name)
         # normality_results = processor.norm_evaluation(name, alpha=0.05)
         p_values = processor.ANOVA_Test(name, filter=True)
-        processor.filter_feature_by_average(name, top_k=0.7, filter=True)
-        processor.filter_feature_by_variance(name, top_k=0.7, filter=True)
+        processor.filter_feature_by_average(name, top_k=0.5, filter=True)
+        processor.filter_feature_by_variance(name, top_k=0.5, filter=True)
         # p_values = processor.Student_T_Test(name, filter=True)
         # print("P-values:", p_values)
         processor.filter_feature_by_correlation(name,\
                                             threshold=0.75, filter=True)
         processor.RandomForest(name, filter=True)
+    processor.combine_omics()
         # correlation_matrices = processor.Pearson_Correlation(name)
         # avg_correlations = processor.average_correlation(correlation_matrices)
-        processor.pca(name, n_components=0.9)
+        # processor.pca(name, n_components=0.9)
         
         # processor.plot_comparison(avg_correlations, name)
     # processor.perform_pca_for_each_omic()
