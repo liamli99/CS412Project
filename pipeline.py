@@ -19,10 +19,10 @@ class Pipeline:
         self.pipeline['clinical'] = []
         self.pipeline['exp'] = [
             {'func':self.processor.normalize, 'params':{}}, \
-            {'func':self.processor.ANOVA_Test, 'params':{'filter':True}}, \
             {'func':self.processor.filter_feature_by_average, 'params':{'top_k':0.2, 'filter':True}}, \
             {'func':self.processor.filter_feature_by_variance, 'params':{'top_k':0.1, 'filter':True}}, \
-            {'func':self.processor.filter_feature_by_correlation, 'params':{'threshold':0.3, 'filter':True}}, \
+            # {'func':self.processor.ANOVA_Test, 'params':{'filter':True}}, \
+            {'func':self.processor.filter_feature_by_correlation, 'params':{'threshold':0.55, 'filter':True}}, \
             {'func':self.processor.LASSO_regression, 'params':{'filter':True}}
         ]
         self.pipeline['methy'] = [
@@ -37,6 +37,7 @@ class Pipeline:
             print(f"Processing {name} data...")
             for step in self.pipeline[name]:
                 step['func'](name, **step['params'])
+        print(f"Processing combined data...")
         self.processor.combine_omics()
         self.processor.LASSO_regression('combined', filter=True)
     
@@ -69,5 +70,5 @@ if __name__ == "__main__":
         "data/filtered_common_features/melanoma", "data/filtered_common_features/sarcoma",]
     pip = Pipeline(data_path_list)
     pip.feature_engineering()
-    pip.evaluate()
-    pip.evaluate_multi_omics()
+    # pip.evaluate()
+    # pip.evaluate_multi_omics()

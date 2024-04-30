@@ -93,7 +93,7 @@ class Processor:
             for dr in self.dr_list:
                 data.append(np.array(getattr(dr, name).loc[row].values))
             # import pdb; pdb.set_trace()
-            stat, p_value = stats.f_oneway(data[0],data[1])
+            stat, p_value = stats.f_oneway(*data)
             p_values.append(p_value)
         p_values = np.array(p_values)
         indexs = np.where(p_values < 0.05)
@@ -175,29 +175,30 @@ class Processor:
         # plt.show()
         #print(f"Correlation Matrix for cancer {dr.cancer_type} is: {correlation_matrix}")
         print(f"Correlation Matrix's shape for feature {name} is: {correlation_matrix.shape}\n")
-        correlation_matrices.append((name, correlation_matrix))
-        return correlation_matrices
+        # correlation_matrices.append((name, correlation_matrix))
+        return name, correlation_matrix
     
     def filter_feature_by_correlation(self, name, threshold=0.5, filter=False):
-        correlation_matrices = self.Pearson_Correlation(name)
-        for name, correlation_matrix in correlation_matrices:
-            # Filter features based on correlation matrix
-            # Get the upper triangle of the correlation matrix
-            
-            upper_triangle = np.triu(correlation_matrix, k=1)
-            # Get the indices of the features that are highly correlated
-            correlated_features = np.where(np.abs(upper_triangle) > threshold)
-            # Get the names of the features
-            feature_names = getattr(self.dr_list[0], name).index
-            # Filter the features
-            features_to_remove = set()
-            for i, j in zip(*correlated_features):
-                if (feature_names[i] not in features_to_remove) and (feature_names[j] not in features_to_remove):
-                    features_to_remove.add(feature_names[i])
-            print(f"Features left after correlation for {name} are: {len(feature_names) - len(features_to_remove)}\n")
-            if filter:
-                for dr in self.dr_list:
-                    dr.filter_rows(name, row_names=feature_names.difference(features_to_remove))
+        name, correlation_matrix = self.Pearson_Correlation(name)
+        
+        # Filter features based on correlation matrix
+        # Get the upper triangle of the correlation matrix
+        upper_triangle = np.triu(correlation_matrix, k=1)
+        # Get the indices of the features that are highly correlated
+        correlated_features = np.where(np.abs(upper_triangle) > threshold)
+        # Get the names of the features
+        feature_names = getattr(self.dr_list[0], name).index
+        # Filter the features
+        features_to_remove = set()
+        for i, j in zip(*correlated_features):
+            if (feature_names[i] not in features_to_remove) and (feature_names[j] not in features_to_remove):
+                features_to_remove.add(feature_names[i])
+        print(f"Features left after correlation for {name} are: {len(feature_names) - len(features_to_remove)}\n")
+        if filter:
+            for dr in self.dr_list:
+                dr.filter_rows(name, row_names=feature_names.difference(features_to_remove))
+            name, correlation_matrix = self.Pearson_Correlation(name)
+            self.corr_heatmap_visualization(name, correlation_matrix)
     
     def filter_feature_by_average(self, name, top_k=0.5, filter=False):
         row_names = getattr(self.dr_list[0], name).index
@@ -207,10 +208,10 @@ class Processor:
         for row in row_names:
             data = []
             for dr in self.dr_list:
-                data.append(np.array(getattr(dr, name).loc[row].values))
-            avg_diff.append(np.abs(np.mean(data[0]) - np.mean(data[1])))
+                data.append(np.array(getattr(dr, name).loc[row].values).mean())
+            avg_diff.append(np.abs(np.max(data) - np.min(data)))
         avg_diff = np.array(avg_diff)
-        indexs = np.argsort(avg_diff)
+        indexs = np.argsort(avg_diff)[::-1]
         filtered_row_names = row_names[indexs[:int(top_k*len(row_names))]]
         
         print(f"Total number of features after filter_feature_by_average: {len(filtered_row_names)} \n")
@@ -251,18 +252,31 @@ class Processor:
     def LASSO_regression(self, name, filter=False):
         row_names = getattr(self.dr_list[0], name).index
         X_train, X_test, y_train, y_test = self.vanilla_train_test_split(name)
-        lasso_logistic = LogisticRegression(penalty='l1', solver='liblinear', C=1.0, random_state=42)
+        lasso_logistic = LogisticRegression(penalty='l1', solver='liblinear', C=0.01, random_state=42)
         
         lasso_logistic.fit(X_train, y_train)
 
         y_pred = lasso_logistic.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
         
-        index = np.where(np.sum(lasso_logistic.coef_, axis=0) != 0)
+        index = np.where(np.sum(np.abs(lasso_logistic.coef_), axis=0) != 0)
         print(f"LASSO Regression Accuracy: {accuracy}")
         print(f"Num of features used in LASSO: {len(index[0])}")
-        filtered_rows = row_names[index] 
-        # import pdb; pdb.set_trace()
+        filtered_rows = row_names[index]
+        
+        # draw the topk lasso regression coefficients
+        lasso_coefs = np.sum(np.abs(lasso_logistic.coef_), axis=0)
+        topk = 5
+        topk_coefs = np.argsort(np.abs(lasso_coefs))[::-1][:topk]
+        topk_features = row_names[topk_coefs]
+        plt.figure(figsize=(10, 10))
+        plt.bar(topk_features, lasso_coefs[topk_coefs])
+        plt.title(f"Top {topk} Lasso Regression Coefficients for {name} data")
+        plt.xlabel("Features")
+        plt.ylabel("Coefficient")
+        plt.xticks(rotation=30)
+        plt.savefig(f'{name}_Lasso_regression.pdf')
+        
         if filter:
             for dr in self.dr_list:
                 dr.filter_rows(name, row_names=filtered_rows)
@@ -313,6 +327,13 @@ class Processor:
         for dr in self.dr_list:
             df_combined = pd.concat([getattr(dr, name) for name in self.names], axis=0)
             setattr(dr, 'combined', df_combined)
+    
+    def corr_heatmap_visualization(self, name, correlation_matrix):
+        plt.figure(figsize=(10, 6))
+        
+        sns.heatmap(correlation_matrix, annot=False, cmap='coolwarm', vmin=0.4, vmax=1.0)
+        plt.title("Correlation Matrix for {}".format(name))
+        plt.savefig(f'{name}_correlation_matrix.pdf')
     
     # data: N_samples, N_features
     def tsne_visualization(self, data, name, labels):
@@ -366,26 +387,6 @@ class Processor:
             y_train, y_test = y[train_index], y[test_index]
             yield X_train, X_test, y_train, y_test
         
-    
-    def average_correlation(self, correlation_matrices):
-        avg_correlations = []
-        for cancer_type, correlation_matrix in correlation_matrices:
-            avg_corr = np.nanmean(correlation_matrix, axis=1)
-            avg_correlations.append((cancer_type, avg_corr))
-        return avg_correlations
-
-    def plot_comparison(self, avg_correlations, name):
-    # Plot comparison of average correlations
-        plt.figure(figsize=(10, 6))
-        for cancer_type, avg_corr in avg_correlations:
-            plt.plot(avg_corr, label=cancer_type)
-        plt.xlabel(name)
-        plt.ylabel('Average Correlation')
-        plt.title('Average Correlation by Cancer Type')
-        plt.legend()
-        plt.grid(True)
-        plt.savefig(f'{name}_correlation.png', )
-        # plt.show()
 
     
 if __name__ == "__main__":
