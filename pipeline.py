@@ -19,10 +19,10 @@ class Pipeline:
         self.pipeline['clinical'] = []
         self.pipeline['exp'] = [
             {'func':self.processor.normalize, 'params':{}}, \
-            {'func':self.processor.filter_feature_by_average, 'params':{'top_k':0.2, 'filter':True}}, \
+            {'func':self.processor.filter_feature_by_average, 'params':{'top_k':0.1, 'filter':True}}, \
             {'func':self.processor.filter_feature_by_variance, 'params':{'top_k':0.1, 'filter':True}}, \
             # {'func':self.processor.ANOVA_Test, 'params':{'filter':True}}, \
-            {'func':self.processor.filter_feature_by_correlation, 'params':{'threshold':0.55, 'filter':True}}, \
+            {'func':self.processor.filter_feature_by_correlation, 'params':{'threshold':0.6, 'filter':True}}, \
             {'func':self.processor.LASSO_regression, 'params':{'filter':True}}
         ]
         self.pipeline['methy'] = [
@@ -47,22 +47,36 @@ class Pipeline:
     
     def evaluate(self, ):
         for name in self.names:
+            print(f"{'-'*10}")
             for model in self.models:
-                print(f"Evaluating {name} data use {model}...")
+                print(f"\nEvaluating {name} data use {model}...")
                 kfold_spliter = self.train_test_split(name)
+                metric_dict = {}
                 for X_train, X_test, y_train, y_test in kfold_spliter:
                     classifier = Classifier(model_name=model)
                     classifier.train(X_train, y_train)
-                    classifier.predict(X_test, y_test)
+                    metric_dict_fold = classifier.predict(X_test, y_test)
+                    for key, value in metric_dict_fold.items():
+                        if key not in metric_dict:
+                            metric_dict[key] = []
+                        metric_dict[key].append(value)
+                for key, value in metric_dict.items():
+                    print(f"{key}: {np.mean(value)} +- {np.std(value)}")
                     # classifier.draw_roc_curve(X_test, y_test)
     
     def evaluate_multi_omics(self,):
         for model in self.models:
             kfold_spliter = self.train_test_split('combined')
+            metric_dict = {}
             for X_train, X_test, y_train, y_test in kfold_spliter:
                 classifier = Classifier(model_name=model)
                 classifier.train(X_train, y_train)
-                classifier.predict(X_test, y_test)
+                metric_dict_fold = classifier.predict(X_test, y_test)
+                for key, value in metric_dict_fold.items():
+                    if key not in metric_dict:
+                        metric_dict[key] = []
+                    metric_dict[key].append(value)
+            
                 # classifier.draw_roc_curve(X_test, y_test)
 
 if __name__ == "__main__":
@@ -70,5 +84,6 @@ if __name__ == "__main__":
         "data/filtered_common_features/melanoma", "data/filtered_common_features/sarcoma",]
     pip = Pipeline(data_path_list)
     pip.feature_engineering()
-    # pip.evaluate()
+    pip.evaluate()
+    
     # pip.evaluate_multi_omics()

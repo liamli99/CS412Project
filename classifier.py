@@ -35,17 +35,21 @@ class Classifier:
         # compute all kinds of metrics
         # accuracy, precision, recall, f1, auc, etc.
         accuracy = accuracy_score(y_label, y_pred)
-        print(f"accuracy: {accuracy}")
+        # print(f"accuracy: {accuracy}")
         # precision = precision_score(y_label, y_pred)
         # recall = recall_score(y_label, y_pred)
         # f1 = f1_score(y_label, y_pred)
         # auc = roc_auc_score(y_label, y_pred)
-        print(classification_report(y_label, y_pred))
+        metric_dict = classification_report(y_label, y_pred, output_dict=True)
+        accuracy = metric_dict['accuracy']
+        precision = metric_dict['macro avg']['precision']
+        recall = metric_dict['macro avg']['recall']
+        f1 = metric_dict['macro avg']['f1-score']
         y_prob = self.model.predict_proba(X)
 
         # auc for multi-class classification
         auc = roc_auc_score(y_label, y_prob, multi_class='ovr')
-        print(f"auc: {auc}")
+        # print(f"auc: {auc}")
         
         # You can print or return these metrics as per your requirement
         # print(f"Accuracy: {accuracy}")
@@ -53,11 +57,11 @@ class Classifier:
         # print(f"Recall: {recall}")
         # print(f"F1 Score: {f1}")
         # print(f"AUC: {auc}")
-        # return {"accuracy": accuracy, \
-        #     "precision": precision, \
-        #     "recall": recall, \
-        #     "f1": f1, \
-        #     "auc": auc}
+        return {"accuracy": accuracy, \
+            "precision": precision, \
+            "recall": recall, \
+            "f1": f1, \
+            "auc": auc}
     
     # for binary classification
     # TODO: for multi-class classification
